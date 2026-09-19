@@ -1,0 +1,27 @@
+name: LEVIATHAN Execution Node (Logistics)
+
+on:
+  schedule:
+    - cron: '30 22 * * 1-5' # 22:30 UTC captures final commodity and equity settlements
+  workflow_dispatch:
+
+jobs:
+  execute-leviathan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Install Dependencies
+        run: pip install yfinance google-cloud-bigquery
+        
+      - name: Execute LEVIATHAN Stream
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+        run: python leviathan_sync.py
+        
