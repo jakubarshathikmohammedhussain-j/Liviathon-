@@ -1,4 +1,4 @@
-name: LEVIATHAN One-Time 5-Year Historical Backfill
+name: LEVIATHAN One-Time 10-Year Historical Backfill
 
 on:
   workflow_dispatch:
@@ -18,8 +18,8 @@ jobs:
       - name: Install Dependencies
         run: pip install yfinance pandas numpy google-cloud-bigquery
 
-      - name: Execute 5-Year Supply Chain Backfill
+      - name: Execute 10-Year Backfill Stream
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
-        run: python leviathan_backfill_5y.py
+        run: python leviathan_backfill_10y.py
         
