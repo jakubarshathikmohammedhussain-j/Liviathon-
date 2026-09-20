@@ -19,70 +19,61 @@ def calculate_rsi_series(series, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi.fillna(50.0)
 
-def classify_supply_chain_signal(ticker, pct_change, rsi):
-    # Classify shock patterns across freight and commodity corridors
-    if pct_change >= 5.0 or rsi >= 75:
-        return "CHOKEPOINT_STRESS_SPIKE"
-    elif pct_change <= -5.0 or rsi <= 25:
-        return "DEMAND_CONTRACTION"
-    elif abs(pct_change) >= 2.5:
-        return "HIGH_VOLATILITY_FLOW"
-    return "STABLE_FLOW"
-
 def main():
-    print("[LEVIATHAN BACKFILL] Initializing 5-Year Maritime & Freight Telemetry Pipeline...")
+    print("[LEVIATHAN BACKFILL] Initializing 10-Year Maritime & Macro History...")
     
-    # 1. BigQuery Setup
     creds_dict = json.loads(os.environ['GOOGLE_CREDENTIALS'])
     credentials = service_account.Credentials.from_service_account_info(creds_dict)
     client = bigquery.Client(credentials=credentials, project=creds_dict['project_id'])
     table_id = f"{creds_dict['project_id']}.telemetry_bronze.leviathan_logistics"
 
-    # 2. Comprehensive Supply Chain & Freight Universe
-    # Container shipping, dry bulk, crude/product tankers, and core commodities
+    # Expanded 10-year maritime, dry bulk, tanker, and commodity basket
     target_basket = {
-        # Freight & Shipping Pure-Plays
-        "BDRY": "Breakwave Dry Bulk Shipping ETF",
-        "ZIM": "ZIM Integrated Shipping (Container)",
-        "MATX": "Matson (Pacific Container Chokepoint)",
-        "SBLK": "Star Bulk Carriers (Global Dry Bulk)",
-        "GNK": "Genco Shipping & Trading (Dry Bulk)",
-        "DAC": "Danaos Corp (Containership Charter)",
-        "FRO": "Frontline plc (Crude Tankers)",
-        "STNG": "Scorpio Tankers (Clean Product Tankers)",
-        "FLNG": "Flex LNG (LNG Maritime Carrier)",
-        # Commodity Chokepoints & Raw Inputs
+        # Container Liners & Charters
+        "ZIM": "Container Carrier",
+        "MATX": "Pacific Container Chokepoint",
+        "DAC": "Containership Charter",
+        "ATCO": "Asset Management / Container Leasing",
+        # Dry Bulk (Iron Ore, Coal, Grains)
+        "BDRY": "Dry Bulk Shipping ETF",
+        "SBLK": "Global Dry Bulk",
+        "GNK": "Dry Bulk Carrier",
+        "EGLE": "Dry Bulk Fleet",
+        # Tankers (Crude & Refined Products)
+        "FRO": "Crude Tanker Operations",
+        "STNG": "Clean Product Tankers",
+        "EURN": "Large Crude Carrier",
+        "FLNG": "LNG Maritime Carrier",
+        # Macro Commodities & Energy Chokepoints
         "CL=F": "WTI Crude Oil Futures",
         "BZ=F": "Brent Crude Oil Futures",
         "NG=F": "Natural Gas Futures",
         "HG=F": "Copper Futures (Industrial Barometer)",
-        "GC=F": "Gold Futures (Macro Hedge)"
+        "GC=F": "Gold Futures (Macro Hedge)",
+        "ZW=F": "Wheat Futures (Food Supply Chain)"
     }
 
     tickers = list(target_basket.keys())
-    print(f"[LEVIATHAN BACKFILL] Ingesting 5-year timeline for {len(tickers)} core logistics assets...")
+    print(f"[LEVIATHAN] Fetching 10-year history for {len(tickers)} assets...")
 
-    # 3. Batch Download
     try:
         df = yf.download(
             tickers=tickers,
-            period="5y",
+            period="10y",
             interval="1d",
             group_by="ticker",
             threads=True,
             progress=False
         )
     except Exception as e:
-        print(f"[LEVIATHAN ERROR] Batch download failed: {e}")
+        print(f"[LEVIATHAN ERROR] Download failed: {e}")
         return
 
     if df.empty:
-        print("[LEVIATHAN ERROR] Download returned empty dataset.")
+        print("[LEVIATHAN ERROR] Empty dataset received.")
         return
 
-    # 4. Transform into Telemetry Stream
     all_records = []
-    timestamp_iso = datetime.utcnow().isoformat()
 
     for ticker in tickers:
         try:
@@ -104,41 +95,38 @@ def main():
                 rsi_val = round(float(rsi_series.get(dt, 50.0)), 2)
                 vol_val = int(volume_series.get(dt, 0))
 
+                # Exact schema match to existing leviathan_logistics table
                 all_records.append({
                     "timestamp": dt.strftime('%Y-%m-%dT00:00:00Z'),
-                    "domain": "LEVIATHAN",
-                    "entity_id": ticker,
-                    "signal_type": target_basket[ticker],
+                    "ticker": ticker,
                     "close_price": round(float(close_val), 2),
                     "percent_change": pct_val,
                     "volume": vol_val,
                     "rsi_14d": rsi_val,
-                    "supply_chain_status": classify_supply_chain_signal(ticker, pct_val, rsi_val)
+                    "signal_type": target_basket[ticker]
                 })
 
         except Exception as e:
-            print(f"[LEVIATHAN ERROR] Failed parsing {ticker}: {e}")
+            print(f"[LEVIATHAN ERROR] Error parsing {ticker}: {e}")
             continue
 
     total_records = len(all_records)
-    print(f"[LEVIATHAN BACKFILL] Successfully structured {total_records} rows of supply chain history.")
+    print(f"[LEVIATHAN] Ingesting {total_records} historical logistics records...")
 
-    # 5. Ingestion to BigQuery
     if total_records > 0:
         job_config = bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
             write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
-            ignore_unknown_values=True,
-            autodetect=True
+            ignore_unknown_values=True
         )
 
         try:
             job = client.load_table_from_json(all_records, table_id, job_config=job_config)
             job.result()
-            print(f"[LEVIATHAN] Committed {total_records} historical logistics records to BigQuery.")
+            print(f"[LEVIATHAN] Successfully loaded {total_records} rows into BigQuery.")
         except Exception as e:
-            print(f"[LEVIATHAN ERROR] BigQuery load failed: {e}")
+            print(f"[LEVIATHAN ERROR] BigQuery upload failed: {e}")
 
 if __name__ == "__main__":
     main()
-  
+    
